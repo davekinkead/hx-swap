@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HX-SWAP Extension Tests</title>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <script src="hx-swap.js"></script>
+    <style>
+        body {
+            font-family: 'Courier New', monospace;
+            max-width: 900px;
+            margin: 20px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        h1 {
+            color: #333;
+        }
+        .test {
+            background: white;
+            margin: 10px 0;
+            padding: 15px;
+            border-left: 4px solid #ccc;
+            border-radius: 3px;
+        }
+        .test.pass {
+            border-left-color: #4caf50;
+        }
+        .test.fail {
+            border-left-color: #f44336;
+        }
+        .test-name {
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        .test.pass .test-name::before {
+            content: '✓ ';
+            color: #4caf50;
+        }
+        .test.fail .test-name::before {
+            content: '✗ ';
+            color: #f44336;
+        }
+        .test-details {
+            font-size: 14px;
+            color: #666;
+            margin-top: 5px;
+        }
+        .error {
+            color: #f44336;
+            font-size: 12px;
+            background: #ffebee;
+            padding: 5px;
+            margin-top: 5px;
+            border-radius: 3px;
+        }
+        .summary {
+            background: #333;
+            color: white;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 5px;
+            font-size: 18px;
+        }
+        .test-container {
+            display: none;
+        }
+        button {
+            background: #2196F3;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 16px;
+            cursor: pointer;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        button:hover {
+            background: #1976D2;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>HX-SWAP Extension Test Suite</h1>
+    <button onclick="runAllTests()">Run All Tests</button>
+
+    <div id="test-results"></div>
+
+    <div class="summary" id="summary" style="display: none;">
+        <div id="summary-text"></div>
+    </div>
+
+    <!-- Test containers (hidden) -->
+    <div class="test-container" id="test-containers"></div>
+
+    <script>
+        const tests = [];
+        let passCount = 0;
+        let failCount = 0;
+
+        function test(name, fn) {
+            tests.push({ name, fn });
+        }
+
+        function assert(condition, message) {
+            if (!condition) {
+                throw new Error(message || 'Assertion failed');
+            }
+        }
+
+        function assertEquals(actual, expected, message) {
+            if (actual !== expected) {
+                throw new Error(message || `Expected ${expected}, but got ${actual}`);
+            }
+        }
+
+        function assertExists(selector, message) {
+            const element = document.querySelector(selector);
+            if (!element) {
+                throw new Error(message || `Element ${selector} not found`);
+            }
+        }
+
+        // Helper function to perform IDs swap (copied from extension)
+        function performIdsSwap(target, responseHTML) {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(responseHTML, 'text/html');
+            const responseElements = doc.querySelectorAll('[id]');
+            const idSet = new Set();
+            responseElements.forEach(el => idSet.add(el.id));
+
+            const outermostElements = Array.from(responseElements).filter(element => {
+                let parent = element.parentElement;
+                while (parent && parent !== doc.body && parent !== doc.documentElement) {
+                    if (parent.id && idSet.has(parent.id)) {
+                        return false;
+                    }
+                    parent = parent.parentElement;
+                }
+                return true;
+            });
+
+            outermostElements.forEach(newElement => {
+                const id = newElement.id;
+                const currentElements = document.querySelectorAll(`#${CSS.escape(id)}`);
+                currentElements.forEach(currentElement => {
+                    const clone = newElement.cloneNode(true);
+                    currentElement.replaceWith(clone);
+                    if (typeof htmx !== 'undefined' && htmx.process) {
+                        htmx.process(clone);
+                    }
+                });
+            });
+        }
+
+        // Test 1: Basic single ID replacement
+        test('Basic single ID replacement', function() {
+            // Setup
+            const container = document.createElement('div');
+            container.innerHTML = '<div id="test-1">Original</div>';
+            document.body.appendChild(container);
+
+            // Simulate swap
+            const response = '<div id="test-1">Updated</div>';
+            performIdsSwap(container, response);
+
+            // Verify
+            const updated = document.getElementById('test-1');
+            assertEquals(updated.textContent, 'Updated', 'Element should be updated');
+
+            // Cleanup
+            container.remove();
+        });
+
+        // Test 2: Multiple ID replacements
+        test('Multiple ID replacements in one swap', function() {
+            const container = document.createElement('div');
+            container.innerHTML = `
+                <div id="test-2a">Original A</div>
+                <div id="test-2b">Original B</div>
+                <div id="test-2c">Original C</div>
+            `;
+            document.body.appendChild(container);
+
+            const response = `
+                <div id="test-2a">Updated A</div>
+                <div id="test-2b">Updated B</div>
+                <div id="test-2c">Updated C</div>
+            `;
+            performIdsSwap(container, response);
+
+            assertEquals(document.getElementById('test-2a').textContent, 'Updated A');
+            assertEquals(document.getElementById('test-2b').textContent, 'Updated B');
+            assertEquals(document.getElementById('test-2c').textContent, 'Updated C');
+
+            container.remove();
+        });
+
+        // Test 3: Nested IDs (only outermost replaced)
+        test('Nested IDs - only outermost replaced', function() {
+            const container = document.createElement('div');
+            container.innerHTML = `
+                <div id="test-3-outer">
+                    Outer: <span id="test-3-inner">Inner Original</span>
+                </div>
+            `;
+            document.body.appendChild(container);
+
+            // Response has both outer and inner, but inner is nested
+            const response = `
+                <div id="test-3-outer">
+                    Outer Updated: <span id="test-3-inner">Inner Updated</span>
+                </div>
+            `;
+
+            performIdsSwap(container, response);
+
+            const outer = document.getElementById('test-3-outer');
+            const inner = document.getElementById('test-3-inner');
+
+            // The outer should be replaced entirely (which includes the updated inner)
+            assert(outer.textContent.includes('Outer Updated'), 'Outer should be updated');
+            assert(inner.textContent.includes('Inner Updated'), 'Inner should also be updated as part of outer');
+
+            container.remove();
+        });
+
+        // Test 4: Non-matching IDs ignored
+        test('Non-matching IDs are ignored', function() {
+            const container = document.createElement('div');
+            container.innerHTML = '<div id="test-4-exists">Original</div>';
+            document.body.appendChild(container);
+
+            // Response contains an ID that doesn't exist in DOM
+            const response = `
+                <div id="test-4-exists">Updated</div>
+                <div id="test-4-nonexistent">Should be ignored</div>
+            `;
+
+            performIdsSwap(container, response);
+
+            // Existing ID should be updated
+            assertEquals(document.getElementById('test-4-exists').textContent, 'Updated');
+
+            // Non-existent ID should not be added
+            const nonexistent = document.getElementById('test-4-nonexistent');
+            assertEquals(nonexistent, null, 'Non-matching IDs should not be added to DOM');
+
+            container.remove();
+        });
+
+        // Test 5: Duplicate IDs (all replaced)
+        test('Duplicate IDs in DOM - all replaced', function() {
+            const container = document.createElement('div');
+            container.innerHTML = `
+                <div id="test-5-dup">Original 1</div>
+                <div id="test-5-dup">Original 2</div>
+                <div id="test-5-dup">Original 3</div>
+            `;
+            document.body.appendChild(container);
+
+            const response = '<div id="test-5-dup">All Updated</div>';
+
+            performIdsSwap(container, response);
+
+            // All duplicates should be replaced
+            const elements = document.querySelectorAll('#test-5-dup');
+            assertEquals(elements.length, 3, 'Should still have 3 elements');
+
+            elements.forEach(el => {
+                assertEquals(el.textContent, 'All Updated', 'All duplicates should be updated');
+            });
+
+            container.remove();
+        });
+
+        // Test 6: Empty response handling
+        test('Empty response handling', function() {
+            const container = document.createElement('div');
+            container.innerHTML = '<div id="test-6">Original</div>';
+            document.body.appendChild(container);
+
+            const response = '';
+
+            performIdsSwap(container, response);
+
+            // Original should remain unchanged
+            assertEquals(document.getElementById('test-6').textContent, 'Original');
+
+            container.remove();
+        });
+
+        // Test 7: Response with no IDs
+        test('Response with no IDs', function() {
+            const container = document.createElement('div');
+            container.innerHTML = '<div id="test-7">Original</div>';
+            document.body.appendChild(container);
+
+            const response = '<div>No IDs here</div><p>Just regular content</p>';
+
+            performIdsSwap(container, response);
+
+            // Original should remain unchanged
+            assertEquals(document.getElementById('test-7').textContent, 'Original');
+
+            container.remove();
+        });
+
+        // Test 8: Swap function handles empty elements list
+        test('Handles response with only whitespace', function() {
+            const container = document.createElement('div');
+            container.innerHTML = '<div id="test-8">Original</div>';
+            document.body.appendChild(container);
+
+            const response = '   \n\t   ';
+            performIdsSwap(container, response);
+
+            // Original should remain unchanged
+            assertEquals(document.getElementById('test-8').textContent, 'Original');
+
+            container.remove();
+        });
+
+        // Test 9: Complex nested structure
+        test('Complex nested structure with multiple levels', function() {
+            const container = document.createElement('div');
+            container.innerHTML = `
+                <div id="test-9-level1">
+                    Level 1
+                    <div id="test-9-level2">
+                        Level 2
+                        <div id="test-9-level3">Level 3</div>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(container);
+
+            // Response with all three levels
+            const response = `
+                <div id="test-9-level1">
+                    Level 1 Updated
+                    <div id="test-9-level2">
+                        Level 2 Updated
+                        <div id="test-9-level3">Level 3 Updated</div>
+                    </div>
+                </div>
+            `;
+
+            performIdsSwap(container, response);
+
+            // Only level1 should be replaced (which includes the nested updates)
+            const level1 = document.getElementById('test-9-level1');
+            assert(level1.textContent.includes('Level 1 Updated'));
+            assert(level1.textContent.includes('Level 2 Updated'));
+            assert(level1.textContent.includes('Level 3 Updated'));
+
+            container.remove();
+        });
+
+        // Test 10: Preserving attributes and classes
+        test('Preserving attributes from response', function() {
+            const container = document.createElement('div');
+            container.innerHTML = '<div id="test-10" class="old">Original</div>';
+            document.body.appendChild(container);
+
+            const response = '<div id="test-10" class="new" data-value="42">Updated</div>';
+
+            performIdsSwap(container, response);
+
+            const element = document.getElementById('test-10');
+            assertEquals(element.textContent, 'Updated');
+            assertEquals(element.className, 'new', 'Class should be updated from response');
+            assertEquals(element.getAttribute('data-value'), '42', 'Attributes should be preserved');
+
+            container.remove();
+        });
+
+        // Run all tests
+        async function runAllTests() {
+            passCount = 0;
+            failCount = 0;
+            const resultsDiv = document.getElementById('test-results');
+            resultsDiv.innerHTML = '';
+
+            for (const test of tests) {
+                const testDiv = document.createElement('div');
+                testDiv.className = 'test';
+
+                const nameDiv = document.createElement('div');
+                nameDiv.className = 'test-name';
+                nameDiv.textContent = test.name;
+                testDiv.appendChild(nameDiv);
+
+                try {
+                    test.fn();
+                    testDiv.classList.add('pass');
+                    passCount++;
+                } catch (error) {
+                    testDiv.classList.add('fail');
+                    failCount++;
+
+                    const errorDiv = document.createElement('div');
+                    errorDiv.className = 'error';
+                    errorDiv.textContent = error.message;
+                    testDiv.appendChild(errorDiv);
+                }
+
+                resultsDiv.appendChild(testDiv);
+            }
+
+            // Show summary
+            const summaryDiv = document.getElementById('summary');
+            const summaryText = document.getElementById('summary-text');
+            summaryDiv.style.display = 'block';
+
+            const total = passCount + failCount;
+            const passRate = ((passCount / total) * 100).toFixed(1);
+
+            summaryText.innerHTML = `
+                <strong>Test Results:</strong><br>
+                Total: ${total} | Passed: ${passCount} | Failed: ${failCount} | Pass Rate: ${passRate}%
+            `;
+        }
+
+        // Auto-run tests on load
+        window.addEventListener('load', function() {
+            // Give HTMX time to initialize
+            setTimeout(runAllTests, 100);
+        });
+    </script>
+
+</body>
+</html>

@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple HX-SWAP Test</title>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <script src="hx-swap.js"></script>
+</head>
+<body hx-ext="ids">
+    <h1>Simple Test</h1>
+    <div id="counter">0</div>
+    <button id="testBtn">Click to test</button>
+
+    <script>
+        let count = 0;
+        document.getElementById('testBtn').addEventListener('click', function() {
+            count++;
+            // Simulate HTMX swap
+            const event = new CustomEvent('htmx:beforeSwap', {
+                detail: {
+                    xhr: { responseText: `<div id="counter">${count}</div>` },
+                    target: this,
+                    shouldSwap: true
+                },
+                bubbles: true
+            });
+            this.dispatchEvent(event);
+        });
+    </script>
+</body>
+</html>
