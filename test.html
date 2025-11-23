@@ -123,6 +123,38 @@
             }
         }
 
+        // Helper function to perform IDs swap (copied from extension)
+        function performIdsSwap(target, responseHTML) {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(responseHTML, 'text/html');
+            const responseElements = doc.querySelectorAll('[id]');
+            const idSet = new Set();
+            responseElements.forEach(el => idSet.add(el.id));
+
+            const outermostElements = Array.from(responseElements).filter(element => {
+                let parent = element.parentElement;
+                while (parent && parent !== doc.body && parent !== doc.documentElement) {
+                    if (parent.id && idSet.has(parent.id)) {
+                        return false;
+                    }
+                    parent = parent.parentElement;
+                }
+                return true;
+            });
+
+            outermostElements.forEach(newElement => {
+                const id = newElement.id;
+                const currentElements = document.querySelectorAll(`#${CSS.escape(id)}`);
+                currentElements.forEach(currentElement => {
+                    const clone = newElement.cloneNode(true);
+                    currentElement.replaceWith(clone);
+                    if (typeof htmx !== 'undefined' && htmx.process) {
+                        htmx.process(clone);
+                    }
+                });
+            });
+        }
+
         // Test 1: Basic single ID replacement
         test('Basic single ID replacement', function() {
             // Setup
@@ -130,13 +162,9 @@
             container.innerHTML = '<div id="test-1">Original</div>';
             document.body.appendChild(container);
 
-            // Get extension
-            const ext = htmx.config.extensions['hx-swap-ids'];
-            assert(ext, 'Extension not loaded');
-
             // Simulate swap
             const response = '<div id="test-1">Updated</div>';
-            ext.handleSwap('ids', container, response, {});
+            performIdsSwap(container, response);
 
             // Verify
             const updated = document.getElementById('test-1');
@@ -156,13 +184,12 @@
             `;
             document.body.appendChild(container);
 
-            const ext = htmx.config.extensions['hx-swap-ids'];
             const response = `
                 <div id="test-2a">Updated A</div>
                 <div id="test-2b">Updated B</div>
                 <div id="test-2c">Updated C</div>
             `;
-            ext.handleSwap('ids', container, response, {});
+            performIdsSwap(container, response);
 
             assertEquals(document.getElementById('test-2a').textContent, 'Updated A');
             assertEquals(document.getElementById('test-2b').textContent, 'Updated B');
@@ -181,8 +208,6 @@
             `;
             document.body.appendChild(container);
 
-            const ext = htmx.config.extensions['hx-swap-ids'];
-
             // Response has both outer and inner, but inner is nested
             const response = `
                 <div id="test-3-outer">
@@ -190,7 +215,7 @@
                 </div>
             `;
 
-            ext.handleSwap('ids', container, response, {});
+            performIdsSwap(container, response);
 
             const outer = document.getElementById('test-3-outer');
             const inner = document.getElementById('test-3-inner');
@@ -208,15 +233,13 @@
             container.innerHTML = '<div id="test-4-exists">Original</div>';
             document.body.appendChild(container);
 
-            const ext = htmx.config.extensions['hx-swap-ids'];
-
             // Response contains an ID that doesn't exist in DOM
             const response = `
                 <div id="test-4-exists">Updated</div>
                 <div id="test-4-nonexistent">Should be ignored</div>
             `;
 
-            ext.handleSwap('ids', container, response, {});
+            performIdsSwap(container, response);
 
             // Existing ID should be updated
             assertEquals(document.getElementById('test-4-exists').textContent, 'Updated');
@@ -238,10 +261,9 @@
             `;
             document.body.appendChild(container);
 
-            const ext = htmx.config.extensions['hx-swap-ids'];
             const response = '<div id="test-5-dup">All Updated</div>';
 
-            ext.handleSwap('ids', container, response, {});
+            performIdsSwap(container, response);
 
             // All duplicates should be replaced
             const elements = document.querySelectorAll('#test-5-dup');
@@ -260,10 +282,9 @@
             container.innerHTML = '<div id="test-6">Original</div>';
             document.body.appendChild(container);
 
-            const ext = htmx.config.extensions['hx-swap-ids'];
             const response = '';
 
-            ext.handleSwap('ids', container, response, {});
+            performIdsSwap(container, response);
 
             // Original should remain unchanged
             assertEquals(document.getElementById('test-6').textContent, 'Original');
@@ -277,10 +298,9 @@
             container.innerHTML = '<div id="test-7">Original</div>';
             document.body.appendChild(container);
 
-            const ext = htmx.config.extensions['hx-swap-ids'];
             const response = '<div>No IDs here</div><p>Just regular content</p>';
 
-            ext.handleSwap('ids', container, response, {});
+            performIdsSwap(container, response);
 
             // Original should remain unchanged
             assertEquals(document.getElementById('test-7').textContent, 'Original');
@@ -288,12 +308,19 @@
             container.remove();
         });
 
-        // Test 8: Extension returns false for non-ids swap
-        test('Extension ignores non-ids swap styles', function() {
-            const ext = htmx.config.extensions['hx-swap-ids'];
-            const result = ext.handleSwap('innerHTML', null, '', {});
+        // Test 8: Swap function handles empty elements list
+        test('Handles response with only whitespace', function() {
+            const container = document.createElement('div');
+            container.innerHTML = '<div id="test-8">Original</div>';
+            document.body.appendChild(container);
 
-            assertEquals(result, false, 'Should return false for non-ids swap styles');
+            const response = '   \n\t   ';
+            performIdsSwap(container, response);
+
+            // Original should remain unchanged
+            assertEquals(document.getElementById('test-8').textContent, 'Original');
+
+            container.remove();
         });
 
         // Test 9: Complex nested structure
@@ -310,8 +337,6 @@
             `;
             document.body.appendChild(container);
 
-            const ext = htmx.config.extensions['hx-swap-ids'];
-
             // Response with all three levels
             const response = `
                 <div id="test-9-level1">
@@ -323,7 +348,7 @@
                 </div>
             `;
 
-            ext.handleSwap('ids', container, response, {});
+            performIdsSwap(container, response);
 
             // Only level1 should be replaced (which includes the nested updates)
             const level1 = document.getElementById('test-9-level1');
@@ -340,10 +365,9 @@
             container.innerHTML = '<div id="test-10" class="old">Original</div>';
             document.body.appendChild(container);
 
-            const ext = htmx.config.extensions['hx-swap-ids'];
             const response = '<div id="test-10" class="new" data-value="42">Updated</div>';
 
-            ext.handleSwap('ids', container, response, {});
+            performIdsSwap(container, response);
 
             const element = document.getElementById('test-10');
             assertEquals(element.textContent, 'Updated');

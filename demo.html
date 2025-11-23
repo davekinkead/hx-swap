@@ -63,7 +63,7 @@
         }
     </style>
 </head>
-<body hx-ext="hx-swap-ids">
+<body hx-ext="ids">
 
     <h1>HX-SWAP Extension Demo</h1>
     <p>This demo shows the <code>hx-swap="ids"</code> extension in action.</p>
@@ -77,8 +77,7 @@
             <p>The cart count is <span id="counter" class="counter">0</span></p>
             <button
                 hx-post="/api/update-cart"
-                hx-swap="ids"
-                onclick="mockCartUpdate(event)">
+                hx-swap="ids">
                 Add to Cart
             </button>
         </main>
@@ -92,8 +91,7 @@
             <p>Last Login: <span id="last-login" class="status">Never</span></p>
             <button
                 hx-post="/api/login"
-                hx-swap="ids"
-                onclick="mockLogin(event)">
+                hx-swap="ids">
                 Login
             </button>
         </div>
@@ -109,8 +107,7 @@
         </div>
         <button
             hx-post="/api/update-nested"
-            hx-swap="ids"
-            onclick="mockNestedUpdate(event)">
+            hx-swap="ids">
             Update Nested (Only Outer Should Change)
         </button>
     </div>
@@ -122,8 +119,7 @@
         <p>Third counter: <span id="dup-counter" class="counter">0</span></p>
         <button
             hx-post="/api/update-duplicates"
-            hx-swap="ids"
-            onclick="mockDuplicateUpdate(event)">
+            hx-swap="ids">
             Update All Duplicates
         </button>
     </div>
@@ -134,68 +130,7 @@
         let nestedCount = 0;
         let dupCount = 0;
 
-        function mockCartUpdate(event) {
-            event.preventDefault();
-            cartCount++;
-
-            // Simulate server response
-            setTimeout(() => {
-                const response = `
-                    <body>
-                        <span id="cart" class="cart">${cartCount}</span>
-                        <span id="counter" class="counter">${cartCount}</span>
-                    </body>
-                `;
-
-                // Manually trigger HTMX swap for demo purposes
-                const button = event.target;
-                htmx.ajax('POST', '/api/update-cart', {
-                    source: button,
-                    swap: 'ids',
-                    values: {},
-                    target: button
-                }).then(() => {
-                    // This won't work with mock, so we'll handle it differently
-                });
-            }, 100);
-
-            // Direct swap for demo
-            document.getElementById('cart').textContent = cartCount;
-            document.getElementById('counter').textContent = cartCount;
-        }
-
-        function mockLogin(event) {
-            event.preventDefault();
-            document.getElementById('username').textContent = 'JohnDoe';
-            document.getElementById('user-status').textContent = 'Online';
-            document.getElementById('last-login').textContent = new Date().toLocaleString();
-        }
-
-        function mockNestedUpdate(event) {
-            event.preventDefault();
-            nestedCount++;
-
-            // Update the outer container (which contains inner-item)
-            const outer = document.getElementById('outer-container');
-            outer.innerHTML = `
-                <h3>Outer Container (Updated ${nestedCount})</h3>
-                <div id="inner-item" style="border: 2px solid green; padding: 10px;">
-                    Inner Item (Updated): <span id="nested-counter" class="counter">${nestedCount}</span>
-                </div>
-            `;
-        }
-
-        function mockDuplicateUpdate(event) {
-            event.preventDefault();
-            dupCount++;
-
-            const elements = document.querySelectorAll('#dup-counter');
-            elements.forEach(el => {
-                el.textContent = dupCount;
-            });
-        }
-
-        // Better approach: Use htmx:configRequest to intercept and mock responses
+        // Intercept HTMX requests and provide mock responses
         document.body.addEventListener('htmx:configRequest', function(event) {
             event.preventDefault();
 
@@ -247,33 +182,18 @@
                 getResponseHeader: () => null
             };
 
-            // Trigger the response event
-            event.detail.target.dispatchEvent(new CustomEvent('htmx:beforeSwap', {
-                detail: {
-                    xhr: mockXHR,
-                    target: event.detail.target,
-                    requestConfig: event.detail,
-                    shouldSwap: true,
-                    serverResponse: responseHTML
-                }
-            }));
-        });
-
-        // Handle the swap
-        document.body.addEventListener('htmx:beforeSwap', function(event) {
-            if (event.detail.requestConfig && event.detail.serverResponse) {
-                const swapStyle = event.detail.target.getAttribute('hx-swap');
-
-                if (swapStyle === 'ids') {
-                    event.preventDefault();
-
-                    // Use our extension's swap logic
-                    const ext = htmx.config.extensions['hx-swap-ids'];
-                    if (ext && ext.handleSwap) {
-                        ext.handleSwap('ids', event.detail.target, event.detail.serverResponse, {});
-                    }
-                }
-            }
+            // Trigger the beforeSwap event with our mock response
+            setTimeout(() => {
+                event.detail.target.dispatchEvent(new CustomEvent('htmx:beforeSwap', {
+                    detail: {
+                        xhr: mockXHR,
+                        target: event.detail.target,
+                        shouldSwap: true,
+                        serverResponse: responseHTML
+                    },
+                    bubbles: true
+                }));
+            }, 100);
         });
     </script>
 
